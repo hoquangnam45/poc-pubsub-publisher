@@ -1,0 +1,57 @@
+substitutions:
+  _SERVICE_NAME: poc-pubsub-publisher
+  _REGION: asia-southeast1
+  _PROJECT: active-bolt-478008-c9
+  _IMAGE_NAME: asia-southeast1-docker.pkg.dev/${_PROJECT}/cdc-pubsub-poc/${_SERVICE_NAME}:latest
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/${_PROJECT}/secrets/DB_URL/versions/latest
+      env: 'DB_URL'
+    - versionName: projects/${_PROJECT}/secrets/DB_USER/versions/latest
+      env: 'DB_USER'
+    - versionName: projects/${_PROJECT}/secrets/DB_PASSWORD/versions/latest
+      env: 'DB_PASSWORD'
+
+steps:
+  # Step 1: Build Docker image using final JAR
+  - name: 'gcr.io/cloud-builders/docker'
+    env:
+      - 'DOCKER_BUILDKIT=1'
+    args:
+      [
+        'build',
+        '-f', './src/main/docker/Dockerfile.jvm',
+        '-t', '${_IMAGE_NAME}',
+        '.'
+      ]
+
+  # Step 2: Push Docker image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_IMAGE_NAME}']
+
+  # Step 3: Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    secretEnv: ['DB_URL', 'DB_USER', 'DB_PASSWORD']
+    args:
+      [
+        'run', 'deploy', '${_SERVICE_NAME}',
+        '--image', '${_IMAGE_NAME}',
+        '--region', '${_REGION}',
+        '--platform', 'managed',
+        '--ingress', 'all',
+        '--set-secrets', 'DB_URL=DB_URL:latest,DB_USER=DB_USER:latest,DB_PASSWORD=DB_PASSWORD:latest',
+        '--port', '8080',
+        '--allow-unauthenticated',
+        '--project', '${_PROJECT}',
+        '--min-instances', '1',
+        '--max-instances', '1'
+      ]
+
+images:
+  - '${_IMAGE_NAME}'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  dynamicSubstitutions: true

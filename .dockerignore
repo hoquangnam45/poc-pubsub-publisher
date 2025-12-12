@@ -1,0 +1,11 @@
+*
+# Files to keep (un-ignore) for the FIRST build stage:
+!mvnw
+!mvnw.cmd
+!pom.xml
+!src/
+!.mvn/
+!target/*-runner
+!target/*-runner.jar
+!target/lib/*
+!target/quarkus-app/*
