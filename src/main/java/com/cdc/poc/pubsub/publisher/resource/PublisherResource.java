@@ -26,6 +26,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Path("/publish")
@@ -44,15 +45,32 @@ public class PublisherResource {
 
     @Startup
     public void initSendMessage() throws IOException {
+        log.info("Initializing publisher for topic: {}", topicName);
         ExecutorService stressTestExecutor = Executors.newFixedThreadPool(1);
         ExecutorService messageSendingExecutor = Executors.newVirtualThreadPerTaskExecutor();
         Publisher publisher = pubSub.publisher(topicName);
+        log.info("Publisher initialized successfully. Starting stress test executor thread.");
         stressTestExecutor.submit(() -> {
             while (true) {
                 PendingStressTestConfiguration configuration = stressTestQueue.take();
+                log.info(
+                        "Starting stress test: testId={}, numOfMessages={}, minSizeKb={}, maxSizeKb={}, rangeStdDev={}, queueDepth={}",
+                        configuration.testId(), configuration.numOfMessage(), configuration.minMessageSizeInKb(),
+                        configuration.maxMessageSizeInKb(), configuration.rangeStdDev(), stressTestQueue.size());
+                long testStartTime = System.nanoTime();
+                AtomicInteger completedCount = new AtomicInteger(0);
+                int totalMessages = configuration.numOfMessage();
                 for (int i = 0; i < configuration.numOfMessage(); i++) {
-                    BigDecimal sizeOfMessageInKb = generateBoundedNormal(configuration.minMessageSizeInKb(), configuration.maxMessageSizeInKb(), configuration.rangeStdDev());
+                    long messageGenStartTime = System.nanoTime();
+                    BigDecimal sizeOfMessageInKb = generateBoundedNormal(configuration.minMessageSizeInKb(),
+                            configuration.maxMessageSizeInKb(), configuration.rangeStdDev());
                     Message message = generateMessage(configuration.testId(), sizeOfMessageInKb);
+                    long messageGenDurationMs = (System.nanoTime() - messageGenStartTime) / 1_000_000;
+                    if (i % 100 == 0) {
+                        log.debug("Generated message {}/{} for testId={}, messageId={}, sizeKb={}, generationTimeMs={}",
+                                i + 1, configuration.numOfMessage(), message.testId(), message.messageId(),
+                                message.payloadSizeInKb(), messageGenDurationMs);
+                    }
                     PubsubMessage pubsubMessage = PubsubMessage.newBuilder()
                             .setData(com.google.protobuf.ByteString.copyFromUtf8(message.payload()))
                             .putAttributes("testId", message.testId().toString())
@@ -60,13 +78,45 @@ public class PublisherResource {
                             .putAttributes("payloadSizeInKb", message.payloadSizeInKb().toPlainString())
                             .putAttributes("creationTimeStamp", message.creationTimeStamp().toString())
                             .build();
+                    final int messageIndex = i;
                     messageSendingExecutor.submit(() -> {
+                        long publishStartTime = System.nanoTime();
                         try {
                             publisher.publish(pubsubMessage).get();
-                            stressTestRepo.createQueueResult(new QueueResult(message.testId(), message.messageId(), true, null, message.payloadSizeInKb(), divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()), BigDecimal.valueOf(1024)), topicName, Instant.now()));
+                            long publishDurationMs = (System.nanoTime() - publishStartTime) / 1_000_000;
+                            BigDecimal serializedSizeKb = divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
+                                    BigDecimal.valueOf(1024));
+                            if (messageIndex % 100 == 0) {
+                                log.info(
+                                        "Published message {}/{}: testId={}, messageId={}, payloadSizeKb={}, serializedSizeKb={}, publishLatencyMs={}",
+                                        messageIndex + 1, configuration.numOfMessage(), message.testId(),
+                                        message.messageId(), message.payloadSizeInKb(), serializedSizeKb,
+                                        publishDurationMs);
+                            }
+                            stressTestRepo.createQueueResult(new QueueResult(message.testId(), message.messageId(),
+                                    true, null, message.payloadSizeInKb(), serializedSizeKb, topicName, Instant.now()));
                         } catch (Exception e) {
-                            log.error("Failed to publish message: testId = {}, messageId = {}, payloadSizeInKb = {}, creationTimestamp = {}", message.testId(), message.messageId(), message.payloadSizeInKb(), message.creationTimeStamp(), e);
-                            stressTestRepo.createQueueResult(new QueueResult(message.testId(), message.messageId(), false, e.getMessage(), message.payloadSizeInKb(), divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()), BigDecimal.valueOf(1024)), topicName, Instant.now()));
+                            long publishDurationMs = (System.nanoTime() - publishStartTime) / 1_000_000;
+                            log.error(
+                                    "Failed to publish message: testId={}, messageId={}, payloadSizeInKb={}, serializedSizeKb={}, publishLatencyMs={}, creationTimestamp={}, error={}",
+                                    message.testId(), message.messageId(), message.payloadSizeInKb(),
+                                    divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
+                                            BigDecimal.valueOf(1024)),
+                                    publishDurationMs, message.creationTimeStamp(), e.getMessage(), e);
+                            stressTestRepo.createQueueResult(new QueueResult(message.testId(), message.messageId(),
+                                    false, e.getMessage(), message.payloadSizeInKb(),
+                                    divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
+                                            BigDecimal.valueOf(1024)),
+                                    topicName, Instant.now()));
+                        } finally {
+                            int completed = completedCount.incrementAndGet();
+                            if (completed == totalMessages) {
+                                long totalPublishTimeMs = (System.nanoTime() - testStartTime) / 1_000_000;
+                                log.info(
+                                        "All messages published for testId={}, totalMessages={}, totalPublishTimeMs={}, avgPublishTimePerMessageMs={}",
+                                        configuration.testId(), totalMessages, totalPublishTimeMs,
+                                        totalPublishTimeMs / totalMessages);
+                            }
                         }
                         return true;
                     });
@@ -77,15 +127,31 @@ public class PublisherResource {
 
     @POST
     public Uni<UUID> stressTestTrigger(StressTestConfiguration configuration) {
-        int numberOfMessage = configuration.numOfMessage() == null || configuration.numOfMessage() <= 0 ? 1 : configuration.numOfMessage();
-        BigDecimal minMessageSizeInKb = configuration.minMessageSizeInKb() == null ? BigDecimal.ONE : configuration.minMessageSizeInKb().compareTo(BigDecimal.ONE) < 0 ? BigDecimal.ONE : configuration.minMessageSizeInKb();
-        BigDecimal maxMessageSizeInKb = configuration.maxMessageSizeInKb() == null ? BigDecimal.ONE : minMessageSizeInKb.min(configuration.maxMessageSizeInKb().compareTo(BigDecimal.ONE) < 0 ? BigDecimal.ONE : configuration.maxMessageSizeInKb());
-        BigDecimal rangeStdDev = configuration.rangeStdDev() == null || configuration.rangeStdDev().compareTo(BigDecimal.ZERO) <= 0 ? BigDecimal.valueOf(6) : configuration.rangeStdDev(); // The range between (min, max) should cover how much standard deviation
+        log.info("Received stress test trigger request: {}", configuration);
+        int numberOfMessage = configuration.numOfMessage() == null || configuration.numOfMessage() <= 0 ? 1
+                : configuration.numOfMessage();
+        BigDecimal minMessageSizeInKb = configuration.minMessageSizeInKb() == null ? BigDecimal.ONE
+                : configuration.minMessageSizeInKb().compareTo(BigDecimal.ONE) < 0 ? BigDecimal.ONE
+                        : configuration.minMessageSizeInKb();
+        BigDecimal maxMessageSizeInKb = configuration.maxMessageSizeInKb() == null ? BigDecimal.ONE
+                : minMessageSizeInKb
+                        .min(configuration.maxMessageSizeInKb().compareTo(BigDecimal.ONE) < 0 ? BigDecimal.ONE
+                                : configuration.maxMessageSizeInKb());
+        BigDecimal rangeStdDev = configuration.rangeStdDev() == null
+                || configuration.rangeStdDev().compareTo(BigDecimal.ZERO) <= 0 ? BigDecimal.valueOf(6)
+                        : configuration.rangeStdDev(); // The range between (min, max) should cover how much standard
+                                                       // deviation
         UUID testId = UUID.randomUUID();
         Instant startTestTime = Instant.now();
-        PendingStressTestConfiguration pendingConfiguration = new PendingStressTestConfiguration(testId, numberOfMessage, minMessageSizeInKb, maxMessageSizeInKb, rangeStdDev, startTestTime);
+        PendingStressTestConfiguration pendingConfiguration = new PendingStressTestConfiguration(testId,
+                numberOfMessage, minMessageSizeInKb, maxMessageSizeInKb, rangeStdDev, startTestTime);
+        log.info(
+                "Created stress test configuration: testId={}, numberOfMessages={}, minSizeKb={}, maxSizeKb={}, rangeStdDev={}, startTime={}, currentQueueDepth={}",
+                testId, numberOfMessage, minMessageSizeInKb, maxMessageSizeInKb, rangeStdDev, startTestTime,
+                stressTestQueue.size());
         stressTestRepo.createStressTestConfiguration(pendingConfiguration);
         stressTestQueue.add(pendingConfiguration);
+        log.info("Stress test queued successfully: testId={}, newQueueDepth={}", testId, stressTestQueue.size());
         return Uni.createFrom().item(testId);
     }
 
