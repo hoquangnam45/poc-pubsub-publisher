@@ -53,9 +53,9 @@ public class PublisherResource {
             while (true) {
                 PendingStressTestConfiguration configuration = stressTestQueue.take();
                 log.info(
-                        "Starting stress test: testId={}, numOfMessages={}, minSizeKb={}, maxSizeKb={}, rangeStdDev={}, queueDepth={}",
+                        "Starting stress test: testId={}, numOfMessages={}, minSizeKb={}, maxSizeKb={}, rangeStdDev={}, description={}, queueDepth={}",
                         configuration.testId(), configuration.numOfMessage(), configuration.minMessageSizeInKb(),
-                        configuration.maxMessageSizeInKb(), configuration.rangeStdDev(), stressTestQueue.size());
+                        configuration.maxMessageSizeInKb(), configuration.rangeStdDev(), configuration.description(), stressTestQueue.size());
                 long testStartTime = System.nanoTime();
                 AtomicInteger completedCount = new AtomicInteger(0);
                 int totalMessages = configuration.numOfMessage();
@@ -66,8 +66,8 @@ public class PublisherResource {
                     Message message = generateMessage(configuration.testId(), sizeOfMessageInKb);
                     long messageGenDurationMs = (System.nanoTime() - messageGenStartTime) / 1_000_000;
                     if (i % 100 == 0) {
-                        log.debug("Generated message {}/{} for testId={}, messageId={}, sizeKb={}, generationTimeMs={}",
-                                i + 1, configuration.numOfMessage(), message.testId(), message.messageId(),
+                        log.debug("Generated message {}/{}[description={}] for testId={}, messageId={}, sizeKb={}, generationTimeMs={}",
+                                i + 1, configuration.numOfMessage(), configuration.description(), message.testId(), message.messageId(),
                                 message.payloadSizeInKb(), messageGenDurationMs);
                     }
                     PubsubMessage pubsubMessage = PubsubMessage.newBuilder()
@@ -87,8 +87,8 @@ public class PublisherResource {
                                     BigDecimal.valueOf(1024));
                             if (messageIndex % 100 == 0) {
                                 log.info(
-                                        "Published message {}/{}: testId={}, messageId={}, payloadSizeKb={}, serializedSizeKb={}, publishLatencyMs={}",
-                                        messageIndex + 1, configuration.numOfMessage(), message.testId(),
+                                        "Published message {}/{}[description={}]: testId={}, messageId={}, payloadSizeKb={}, serializedSizeKb={}, publishLatencyMs={}",
+                                        messageIndex + 1, configuration.numOfMessage(), configuration.description(), message.testId(),
                                         message.messageId(), message.payloadSizeInKb(), serializedSizeKb,
                                         publishDurationMs);
                             }
@@ -97,11 +97,11 @@ public class PublisherResource {
                         } catch (Exception e) {
                             long publishDurationMs = (System.nanoTime() - publishStartTime) / 1_000_000;
                             log.error(
-                                    "Failed to publish message: testId={}, messageId={}, payloadSizeInKb={}, serializedSizeKb={}, publishLatencyMs={}, creationTimestamp={}, error={}",
+                                    "Failed to publish message: testId={}, messageId={}, payloadSizeInKb={}, serializedSizeKb={}, publishLatencyMs={}, description={}, creationTimestamp={}, error={}",
                                     message.testId(), message.messageId(), message.payloadSizeInKb(),
                                     divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
                                             BigDecimal.valueOf(1024)),
-                                    publishDurationMs, message.creationTimeStamp(), e.getMessage(), e);
+                                    publishDurationMs, configuration.description(), message.creationTimeStamp(), e.getMessage(), e);
                             stressTestRepo.createInitialTopicResult(new TopicResult(message.testId(), message.messageId(),
                                     false, e.getMessage(), message.payloadSizeInKb(),
                                     divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
@@ -112,9 +112,9 @@ public class PublisherResource {
                             if (completed == totalMessages) {
                                 long totalPublishTimeMs = (System.nanoTime() - testStartTime) / 1_000_000;
                                 log.info(
-                                        "All messages published for testId={}, totalMessages={}, totalPublishTimeMs={}, avgPublishTimePerMessageMs={}",
+                                        "All messages published for testId={}, totalMessages={}, totalPublishTimeMs={}, avgPublishTimePerMessageMs={}, description={}",
                                         configuration.testId(), totalMessages, totalPublishTimeMs,
-                                        totalPublishTimeMs / totalMessages);
+                                        totalPublishTimeMs / totalMessages, configuration.description());
                             }
                         }
                         return true;
