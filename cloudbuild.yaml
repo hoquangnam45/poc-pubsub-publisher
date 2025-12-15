@@ -42,6 +42,7 @@ steps:
         '--platform', 'managed',
         '--ingress', 'all',
         '--set-secrets', 'DB_URL=DB_URL:latest,DB_USER=DB_USER:latest,DB_PASSWORD=DB_PASSWORD:latest',
+        '--no-cpu-throttling',
         '--port', '8080',
         '--allow-unauthenticated',
         '--project', '${_PROJECT}',
