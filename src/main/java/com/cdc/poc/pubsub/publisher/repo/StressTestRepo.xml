@@ -2,11 +2,11 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.cdc.poc.pubsub.publisher.repo.StressTestRepo">
     <insert id="createStressTestConfiguration">
-        INSERT INTO test_configuration(test_id, num_of_message, min_message_size_in_kb, max_message_size_in_kb, range_std_dev, start_time)
-        VALUES (#{testId}, #{numOfMessage}, #{minMessageSizeInKb}, #{maxMessageSizeInKb}, #{rangeStdDev}, #{startTime})
+        INSERT INTO test_configuration(test_id, num_of_message, min_message_size_in_kb, max_message_size_in_kb, range_std_dev, start_time, description)
+        VALUES (#{testId}, #{numOfMessage}, #{minMessageSizeInKb}, #{maxMessageSizeInKb}, #{rangeStdDev}, #{startTime}, #{description})
     </insert>
-    <insert id="createQueueResult">
-        INSERT INTO test_result(test_id, message_id, success, error_message, message_size_in_kb, serialized_size_in_kb, topic_id, created_at)
+    <insert id="createInitialTopicResult">
+        INSERT INTO test_topic_result(test_id, message_id, success, error_message, message_size_in_kb, serialized_size_in_kb, topic_id, created_at)
         VALUES (#{testId}, #{messageId}, #{success}, #{errorMessage}, #{messageSizeInKb}, #{serializedSizeInKb}, #{topicId}, #{createdAt})
     </insert>
 </mapper>

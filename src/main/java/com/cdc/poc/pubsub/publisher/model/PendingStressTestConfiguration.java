@@ -10,6 +10,7 @@ public record PendingStressTestConfiguration(
         BigDecimal minMessageSizeInKb,
         BigDecimal maxMessageSizeInKb,
         BigDecimal rangeStdDev,
+        String description,
         Instant startTime
 ) {
 }

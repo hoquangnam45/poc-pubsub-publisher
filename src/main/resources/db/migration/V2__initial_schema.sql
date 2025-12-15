@@ -4,10 +4,11 @@ CREATE TABLE IF NOT EXISTS test_configuration (
     min_message_size_in_kb DECIMAL,
     max_message_size_in_kb DECIMAL,
     range_std_dev DECIMAL,
+    description VARCHAR(255),
     start_time TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS test_result (
+CREATE TABLE IF NOT EXISTS test_topic_result (
     test_id UUID,
     message_id UUID,
     success BOOLEAN,
@@ -34,7 +35,7 @@ CREATE TABLE IF NOT EXISTS test_subscriber_result
     pull_options VARCHAR(255),
     created_at                TIMESTAMP,
     PRIMARY KEY (test_id, message_id, subscription_id, pull_options),
-    FOREIGN KEY (test_id, message_id) REFERENCES test_result (test_id, message_id)
+    FOREIGN KEY (test_id, message_id) REFERENCES test_topic_result (test_id, message_id)
 );
 
 -- CREATE TABLE IF NOT EXISTS polling_subscriber_result(

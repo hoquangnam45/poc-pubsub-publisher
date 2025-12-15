@@ -6,6 +6,7 @@ public record StressTestConfiguration(
         Integer numOfMessage,
         BigDecimal minMessageSizeInKb,
         BigDecimal maxMessageSizeInKb,
-        BigDecimal rangeStdDev
+        BigDecimal rangeStdDev,
+        String description
 ) {
 }

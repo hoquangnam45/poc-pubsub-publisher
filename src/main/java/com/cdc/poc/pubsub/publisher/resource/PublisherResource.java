@@ -2,10 +2,9 @@ package com.cdc.poc.pubsub.publisher.resource;
 
 import com.cdc.poc.pubsub.publisher.model.Message;
 import com.cdc.poc.pubsub.publisher.model.PendingStressTestConfiguration;
-import com.cdc.poc.pubsub.publisher.model.QueueResult;
+import com.cdc.poc.pubsub.publisher.model.TopicResult;
 import com.cdc.poc.pubsub.publisher.model.StressTestConfiguration;
 import com.cdc.poc.pubsub.publisher.repo.StressTestRepo;
-import com.google.api.core.ApiFuture;
 import com.google.cloud.pubsub.v1.Publisher;
 import com.google.pubsub.v1.PubsubMessage;
 import io.quarkiverse.googlecloudservices.pubsub.QuarkusPubSub;
@@ -93,7 +92,7 @@ public class PublisherResource {
                                         message.messageId(), message.payloadSizeInKb(), serializedSizeKb,
                                         publishDurationMs);
                             }
-                            stressTestRepo.createQueueResult(new QueueResult(message.testId(), message.messageId(),
+                            stressTestRepo.createInitialTopicResult(new TopicResult(message.testId(), message.messageId(),
                                     true, null, message.payloadSizeInKb(), serializedSizeKb, topicName, Instant.now()));
                         } catch (Exception e) {
                             long publishDurationMs = (System.nanoTime() - publishStartTime) / 1_000_000;
@@ -103,7 +102,7 @@ public class PublisherResource {
                                     divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
                                             BigDecimal.valueOf(1024)),
                                     publishDurationMs, message.creationTimeStamp(), e.getMessage(), e);
-                            stressTestRepo.createQueueResult(new QueueResult(message.testId(), message.messageId(),
+                            stressTestRepo.createInitialTopicResult(new TopicResult(message.testId(), message.messageId(),
                                     false, e.getMessage(), message.payloadSizeInKb(),
                                     divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
                                             BigDecimal.valueOf(1024)),
@@ -144,10 +143,10 @@ public class PublisherResource {
         UUID testId = UUID.randomUUID();
         Instant startTestTime = Instant.now();
         PendingStressTestConfiguration pendingConfiguration = new PendingStressTestConfiguration(testId,
-                numberOfMessage, minMessageSizeInKb, maxMessageSizeInKb, rangeStdDev, startTestTime);
+                numberOfMessage, minMessageSizeInKb, maxMessageSizeInKb, rangeStdDev, configuration.description(), startTestTime);
         log.info(
-                "Created stress test configuration: testId={}, numberOfMessages={}, minSizeKb={}, maxSizeKb={}, rangeStdDev={}, startTime={}, currentQueueDepth={}",
-                testId, numberOfMessage, minMessageSizeInKb, maxMessageSizeInKb, rangeStdDev, startTestTime,
+                "Create stress test configuration: testId={}, numberOfMessages={}, minSizeKb={}, maxSizeKb={}, rangeStdDev={}, startTime={}, description={}, currentQueueDepth={}",
+                testId, numberOfMessage, minMessageSizeInKb, maxMessageSizeInKb, rangeStdDev, startTestTime, configuration.description(),
                 stressTestQueue.size());
         stressTestRepo.createStressTestConfiguration(pendingConfiguration);
         stressTestQueue.add(pendingConfiguration);
