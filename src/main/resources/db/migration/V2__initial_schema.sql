@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS test_configuration (
     start_time TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS test_topic_result (
+CREATE TABLE IF NOT EXISTS test_publish_result (
     test_id UUID,
     message_id UUID,
     success BOOLEAN,
@@ -16,9 +16,16 @@ CREATE TABLE IF NOT EXISTS test_topic_result (
     message_size_in_kb DECIMAL,
     serialized_size_in_kb DECIMAL,
     topic_id VARCHAR(255),
+    created_at TIMESTAMP,
+    PRIMARY KEY (test_id, message_id),
+    FOREIGN KEY (test_id) REFERENCES test_configuration(test_id)
+);
+
+CREATE TABLE IF NOT EXISTS test_topic_result (
+    test_id UUID,
+    message_id UUID,
     topic_publish_time TIMESTAMP,
     topic_arrival_time TIMESTAMP,
-    created_at TIMESTAMP,
     PRIMARY KEY (test_id, message_id),
     FOREIGN KEY (test_id) REFERENCES test_configuration(test_id)
 );
@@ -34,8 +41,8 @@ CREATE TABLE IF NOT EXISTS test_subscriber_result
     subscription_id VARCHAR(255),
     pull_options VARCHAR(255),
     created_at                TIMESTAMP,
-    PRIMARY KEY (test_id, message_id, subscription_id, pull_options),
-    FOREIGN KEY (test_id, message_id) REFERENCES test_topic_result (test_id, message_id)
+    PRIMARY KEY (test_id, message_id, subscription_id, pull_options)
+--     FOREIGN KEY (test_id, message_id) REFERENCES test_topic_result (test_id, message_id)
 );
 
 -- CREATE TABLE IF NOT EXISTS polling_subscriber_result(

@@ -2,7 +2,7 @@ package com.cdc.poc.pubsub.publisher.resource;
 
 import com.cdc.poc.pubsub.publisher.model.Message;
 import com.cdc.poc.pubsub.publisher.model.PendingStressTestConfiguration;
-import com.cdc.poc.pubsub.publisher.model.TopicResult;
+import com.cdc.poc.pubsub.publisher.model.PublishResult;
 import com.cdc.poc.pubsub.publisher.model.StressTestConfiguration;
 import com.cdc.poc.pubsub.publisher.repo.StressTestRepo;
 import com.google.cloud.pubsub.v1.Publisher;
@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class PublisherResource {
     private static final Random random = new Random();
     private static final LinkedBlockingQueue<PendingStressTestConfiguration> stressTestQueue = new LinkedBlockingQueue<>();
+    private static final LinkedBlockingQueue<PublishResult> PUBLISH_RESULT_QUEUE = new LinkedBlockingQueue<>();
 
     @Inject
     QuarkusPubSub pubSub;
@@ -42,11 +43,15 @@ public class PublisherResource {
     @ConfigProperty(name = "pubsub.topic")
     String topicName;
 
+    @ConfigProperty(name = "workers.topic-result.size", defaultValue = "10")
+    Integer workersTopicResultSize;
+
     @Startup
     public void initSendMessage() throws IOException {
         log.info("Initializing publisher for topic: {}", topicName);
         ExecutorService stressTestExecutor = Executors.newFixedThreadPool(1);
         ExecutorService messageSendingExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        ExecutorService topicResultExecutor = Executors.newFixedThreadPool(workersTopicResultSize);
         Publisher publisher = pubSub.publisher(topicName);
         log.info("Publisher initialized successfully. Starting stress test executor thread.");
         stressTestExecutor.submit(() -> {
@@ -92,7 +97,7 @@ public class PublisherResource {
                                         message.messageId(), message.payloadSizeInKb(), serializedSizeKb,
                                         publishDurationMs);
                             }
-                            stressTestRepo.createInitialTopicResult(new TopicResult(message.testId(), message.messageId(),
+                            PUBLISH_RESULT_QUEUE.add(new PublishResult(message.testId(), message.messageId(),
                                     true, null, message.payloadSizeInKb(), serializedSizeKb, topicName, Instant.now()));
                         } catch (Exception e) {
                             long publishDurationMs = (System.nanoTime() - publishStartTime) / 1_000_000;
@@ -102,7 +107,7 @@ public class PublisherResource {
                                     divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
                                             BigDecimal.valueOf(1024)),
                                     publishDurationMs, configuration.description(), message.creationTimeStamp(), e.getMessage(), e);
-                            stressTestRepo.createInitialTopicResult(new TopicResult(message.testId(), message.messageId(),
+                            PUBLISH_RESULT_QUEUE.add(new PublishResult(message.testId(), message.messageId(),
                                     false, e.getMessage(), message.payloadSizeInKb(),
                                     divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
                                             BigDecimal.valueOf(1024)),
@@ -119,6 +124,16 @@ public class PublisherResource {
                         }
                         return true;
                     });
+                }
+            }
+        });
+        topicResultExecutor.submit(() -> {
+            while (true) {
+                PublishResult result = PUBLISH_RESULT_QUEUE.take();
+                try {
+                    stressTestRepo.createPublishResult(result);
+                } catch (Exception e) {
+                    log.error("Failed to persist topic result message: testId={}, messageId={}, payloadSizeInKb={}, serializedSizeKb={}, creationTimestamp={}, error={}", result.testId(), result.messageId(), result.messageSizeInKb(), result.serializedSizeInKb(), result.createdAt(), e.getMessage(), e);
                 }
             }
         });
