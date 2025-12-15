@@ -6,7 +6,7 @@
         VALUES (#{testId}, #{numOfMessage}, #{minMessageSizeInKb}, #{maxMessageSizeInKb}, #{rangeStdDev}, #{startTime}, #{description})
     </insert>
     <insert id="createPublishResult">
-        INSERT INTO test_publish_result(test_id, message_id, success, error_message, message_size_in_kb, serialized_size_in_kb, topic_id, created_at)
-        VALUES (#{testId}, #{messageId}, #{success}, #{errorMessage}, #{messageSizeInKb}, #{serializedSizeInKb}, #{topicId}, #{createdAt})
+        INSERT INTO test_publish_result(test_id, message_id, success, error_message, message_size_in_kb, serialized_size_in_kb, topic_id, created_at, publish_at)
+        VALUES (#{testId}, #{messageId}, #{success}, #{errorMessage}, #{messageSizeInKb}, #{serializedSizeInKb}, #{topicId}, #{createdAt}, #{publishAt})
     </insert>
 </mapper>

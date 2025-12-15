@@ -19,6 +19,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Random;
 import java.util.UUID;
@@ -61,15 +62,15 @@ public class PublisherResource {
                         "Starting stress test: testId={}, numOfMessages={}, minSizeKb={}, maxSizeKb={}, rangeStdDev={}, description={}, queueDepth={}",
                         configuration.testId(), configuration.numOfMessage(), configuration.minMessageSizeInKb(),
                         configuration.maxMessageSizeInKb(), configuration.rangeStdDev(), configuration.description(), stressTestQueue.size());
-                long testStartTime = System.nanoTime();
+                Instant testStartTime = Instant.now();
                 AtomicInteger completedCount = new AtomicInteger(0);
                 int totalMessages = configuration.numOfMessage();
                 for (int i = 0; i < configuration.numOfMessage(); i++) {
-                    long messageGenStartTime = System.nanoTime();
+                    Instant messageGenStartTime = Instant.now();
                     BigDecimal sizeOfMessageInKb = generateBoundedNormal(configuration.minMessageSizeInKb(),
                             configuration.maxMessageSizeInKb(), configuration.rangeStdDev());
                     Message message = generateMessage(configuration.testId(), sizeOfMessageInKb);
-                    long messageGenDurationMs = (System.nanoTime() - messageGenStartTime) / 1_000_000;
+                    long messageGenDurationMs = Duration.between(messageGenStartTime, Instant.now()).toMillis();
                     if (i % 100 == 0) {
                         log.debug("Generated message {}/{}[description={}] for testId={}, messageId={}, sizeKb={}, generationTimeMs={}",
                                 i + 1, configuration.numOfMessage(), configuration.description(), message.testId(), message.messageId(),
@@ -84,10 +85,10 @@ public class PublisherResource {
                             .build();
                     final int messageIndex = i;
                     messageSendingExecutor.submit(() -> {
-                        long publishStartTime = System.nanoTime();
+                        Instant publishStartTime = Instant.now();
                         try {
                             publisher.publish(pubsubMessage).get();
-                            long publishDurationMs = (System.nanoTime() - publishStartTime) / 1_000_000;
+                            long publishDurationMs = Duration.between(publishStartTime, Instant.now()).toMillis();
                             BigDecimal serializedSizeKb = divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
                                     BigDecimal.valueOf(1024));
                             if (messageIndex % 100 == 0) {
@@ -98,9 +99,9 @@ public class PublisherResource {
                                         publishDurationMs);
                             }
                             PUBLISH_RESULT_QUEUE.add(new PublishResult(message.testId(), message.messageId(),
-                                    true, null, message.payloadSizeInKb(), serializedSizeKb, topicName, Instant.now()));
+                                    true, null, message.payloadSizeInKb(), serializedSizeKb, topicName, message.creationTimeStamp(), publishStartTime));
                         } catch (Exception e) {
-                            long publishDurationMs = (System.nanoTime() - publishStartTime) / 1_000_000;
+                            long publishDurationMs = Duration.between(publishStartTime, Instant.now()).toMillis();
                             log.error(
                                     "Failed to publish message: testId={}, messageId={}, payloadSizeInKb={}, serializedSizeKb={}, publishLatencyMs={}, description={}, creationTimestamp={}, error={}",
                                     message.testId(), message.messageId(), message.payloadSizeInKb(),
@@ -111,11 +112,11 @@ public class PublisherResource {
                                     false, e.getMessage(), message.payloadSizeInKb(),
                                     divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
                                             BigDecimal.valueOf(1024)),
-                                    topicName, Instant.now()));
+                                    topicName, message.creationTimeStamp(), publishStartTime));
                         } finally {
                             int completed = completedCount.incrementAndGet();
                             if (completed == totalMessages) {
-                                long totalPublishTimeMs = (System.nanoTime() - testStartTime) / 1_000_000;
+                                long totalPublishTimeMs = Duration.between(testStartTime, Instant.now()).toMillis();
                                 log.info(
                                         "All messages published for testId={}, totalMessages={}, totalPublishTimeMs={}, avgPublishTimePerMessageMs={}, description={}",
                                         configuration.testId(), totalMessages, totalPublishTimeMs,

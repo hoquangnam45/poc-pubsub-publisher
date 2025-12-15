@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS test_publish_result (
     message_size_in_kb DECIMAL,
     serialized_size_in_kb DECIMAL,
     topic_id VARCHAR(255),
+    publish_at TIMESTAMP,
     created_at TIMESTAMP,
     PRIMARY KEY (test_id, message_id),
     FOREIGN KEY (test_id) REFERENCES test_configuration(test_id)
