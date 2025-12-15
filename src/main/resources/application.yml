@@ -8,6 +8,10 @@ quarkus:
     db-kind: postgresql
     jdbc:
       url: ${DB_URL}
+      max-size: 20  # Maximum number of connections in the pool
+      min-size: 5   # Minimum number of idle connections maintained
+      acquisition-timeout: 30s  # Wait up to 30s for a connection
+      leak-detection-interval: 5M  # Detect and log connection leaks
     username: ${DB_USER}
     password: ${DB_PASSWORD}
   flyway:
