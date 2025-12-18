@@ -2,6 +2,7 @@ package com.cdc.poc.pubsub.publisher.resource;
 
 import com.cdc.poc.pubsub.publisher.model.Message;
 import com.cdc.poc.pubsub.publisher.model.PendingStressTestConfiguration;
+import com.cdc.poc.pubsub.publisher.model.PendingStressTestConfigurationMdl;
 import com.cdc.poc.pubsub.publisher.model.PublishResult;
 import com.cdc.poc.pubsub.publisher.model.StressTestConfiguration;
 import com.cdc.poc.pubsub.publisher.repo.StressTestRepo;
@@ -21,8 +22,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -34,6 +39,7 @@ public class PublisherResource {
     private static final Random random = new Random();
     private static final LinkedBlockingQueue<PendingStressTestConfiguration> stressTestQueue = new LinkedBlockingQueue<>();
     private static final LinkedBlockingQueue<PublishResult> PUBLISH_RESULT_QUEUE = new LinkedBlockingQueue<>();
+    private static final Map<String, Publisher> PUBLISHER_MAP = new ConcurrentHashMap<>();
 
     @Inject
     QuarkusPubSub pubSub;
@@ -41,20 +47,22 @@ public class PublisherResource {
     @Inject
     StressTestRepo stressTestRepo;
 
-    @ConfigProperty(name = "pubsub.topic")
-    String topicName;
+    @ConfigProperty(name = "pubsub.topics")
+    List<String> topics;
 
     @ConfigProperty(name = "workers.topic-result.size", defaultValue = "10")
     Integer workersTopicResultSize;
 
     @Startup
     public void initSendMessage() throws IOException {
-        log.info("Initializing publisher for topic: {}", topicName);
+        for (String topicName : topics) {
+            log.info("Initializing publisher for topic: {}", topicName);
+            PUBLISHER_MAP.put(topicName, pubSub.publisher(topicName));
+        }
+        log.info("Publisher initialized successfully. Starting stress test executor thread.");
         ExecutorService stressTestExecutor = Executors.newFixedThreadPool(1);
         ExecutorService messageSendingExecutor = Executors.newVirtualThreadPerTaskExecutor();
         ExecutorService topicResultExecutor = Executors.newFixedThreadPool(workersTopicResultSize);
-        Publisher publisher = pubSub.publisher(topicName);
-        log.info("Publisher initialized successfully. Starting stress test executor thread.");
         stressTestExecutor.submit(() -> {
             while (true) {
                 PendingStressTestConfiguration configuration = stressTestQueue.take();
@@ -76,55 +84,61 @@ public class PublisherResource {
                                 i + 1, configuration.numOfMessage(), configuration.description(), message.testId(), message.messageId(),
                                 message.payloadSizeInKb(), messageGenDurationMs);
                     }
-                    PubsubMessage pubsubMessage = PubsubMessage.newBuilder()
+                    PubsubMessage.Builder pubsubMessageBuilder = PubsubMessage.newBuilder()
                             .setData(com.google.protobuf.ByteString.copyFromUtf8(message.payload()))
                             .putAttributes("testId", message.testId().toString())
                             .putAttributes("messageId", message.messageId().toString())
                             .putAttributes("payloadSizeInKb", message.payloadSizeInKb().toPlainString())
-                            .putAttributes("creationTimeStamp", message.creationTimeStamp().toString())
-                            .build();
+                            .putAttributes("creationTimeStamp", message.creationTimeStamp().toString());
                     final int messageIndex = i;
-                    messageSendingExecutor.submit(() -> {
-                        Instant publishStartTime = Instant.now();
-                        try {
-                            publisher.publish(pubsubMessage).get();
-                            long publishDurationMs = Duration.between(publishStartTime, Instant.now()).toMillis();
-                            BigDecimal serializedSizeKb = divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
-                                    BigDecimal.valueOf(1024));
-                            if (messageIndex % 100 == 0) {
-                                log.info(
-                                        "Published message {}/{}[description={}]: testId={}, messageId={}, payloadSizeKb={}, serializedSizeKb={}, publishLatencyMs={}",
-                                        messageIndex + 1, configuration.numOfMessage(), configuration.description(), message.testId(),
-                                        message.messageId(), message.payloadSizeInKb(), serializedSizeKb,
-                                        publishDurationMs);
+                    List<String> includedTopics = configuration.includedTopics() == null || configuration.includedTopics().isEmpty() ? topics : configuration.includedTopics();
+                    for (String topicName : includedTopics) {
+                        PubsubMessage pubsubMessage = pubsubMessageBuilder
+                                .putAttributes("topic_id", topicName)
+                                .build();
+                        messageSendingExecutor.submit(() -> {
+                            Instant publishStartTime = Instant.now();
+                            try {
+                                // NOTE: should be auto-mount on virtual thread
+                                PUBLISHER_MAP.get(topicName).publish(pubsubMessage).get();
+                                long publishDurationMs = Duration.between(publishStartTime, Instant.now()).toMillis();
+                                BigDecimal serializedSizeKb = divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
+                                        BigDecimal.valueOf(1024));
+                                if (messageIndex % 100 == 0) {
+                                    log.info(
+                                            "Published message {}/{}[description={}]: testId={}, messageId={}, payloadSizeKb={}, serializedSizeKb={}, publishLatencyMs={}",
+                                            messageIndex + 1, configuration.numOfMessage(), configuration.description(), message.testId(),
+                                            message.messageId(), message.payloadSizeInKb(), serializedSizeKb,
+                                            publishDurationMs);
+                                }
+                                PUBLISH_RESULT_QUEUE.add(new PublishResult(message.testId(), message.messageId(),
+                                        true, null, message.payloadSizeInKb(), serializedSizeKb, topicName, message.creationTimeStamp(), publishStartTime));
+                            } catch (Exception e) {
+                                long publishDurationMs = Duration.between(publishStartTime, Instant.now()).toMillis();
+                                log.error(
+                                        "Failed to publish message: testId={}, messageId={}, payloadSizeInKb={}, serializedSizeKb={}, publishLatencyMs={}, description={}, creationTimestamp={}, error={}",
+                                        message.testId(), message.messageId(), message.payloadSizeInKb(),
+                                        divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
+                                                BigDecimal.valueOf(1024)),
+                                        publishDurationMs, configuration.description(), message.creationTimeStamp(), e.getMessage(), e);
+                                PUBLISH_RESULT_QUEUE.add(new PublishResult(message.testId(), message.messageId(),
+                                        false, e.getMessage(), message.payloadSizeInKb(),
+                                        divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
+                                                BigDecimal.valueOf(1024)),
+                                        topicName, message.creationTimeStamp(), publishStartTime));
+                            } finally {
+                                int completed = completedCount.incrementAndGet();
+                                if (completed == totalMessages) {
+                                    long totalPublishTimeMs = Duration.between(testStartTime, Instant.now()).toMillis();
+                                    log.info(
+                                            "All messages published for testId={}, totalMessages={}, totalPublishTimeMs={}, avgPublishTimePerMessageMs={}, description={}",
+                                            configuration.testId(), totalMessages, totalPublishTimeMs,
+                                            totalPublishTimeMs / totalMessages, configuration.description());
+                                }
                             }
-                            PUBLISH_RESULT_QUEUE.add(new PublishResult(message.testId(), message.messageId(),
-                                    true, null, message.payloadSizeInKb(), serializedSizeKb, topicName, message.creationTimeStamp(), publishStartTime));
-                        } catch (Exception e) {
-                            long publishDurationMs = Duration.between(publishStartTime, Instant.now()).toMillis();
-                            log.error(
-                                    "Failed to publish message: testId={}, messageId={}, payloadSizeInKb={}, serializedSizeKb={}, publishLatencyMs={}, description={}, creationTimestamp={}, error={}",
-                                    message.testId(), message.messageId(), message.payloadSizeInKb(),
-                                    divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
-                                            BigDecimal.valueOf(1024)),
-                                    publishDurationMs, configuration.description(), message.creationTimeStamp(), e.getMessage(), e);
-                            PUBLISH_RESULT_QUEUE.add(new PublishResult(message.testId(), message.messageId(),
-                                    false, e.getMessage(), message.payloadSizeInKb(),
-                                    divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
-                                            BigDecimal.valueOf(1024)),
-                                    topicName, message.creationTimeStamp(), publishStartTime));
-                        } finally {
-                            int completed = completedCount.incrementAndGet();
-                            if (completed == totalMessages) {
-                                long totalPublishTimeMs = Duration.between(testStartTime, Instant.now()).toMillis();
-                                log.info(
-                                        "All messages published for testId={}, totalMessages={}, totalPublishTimeMs={}, avgPublishTimePerMessageMs={}, description={}",
-                                        configuration.testId(), totalMessages, totalPublishTimeMs,
-                                        totalPublishTimeMs / totalMessages, configuration.description());
-                            }
-                        }
-                        return true;
-                    });
+                            return true;
+                        });
+                    }
                 }
             }
         });
@@ -159,12 +173,13 @@ public class PublisherResource {
         UUID testId = UUID.randomUUID();
         Instant startTestTime = Instant.now();
         PendingStressTestConfiguration pendingConfiguration = new PendingStressTestConfiguration(testId,
-                numberOfMessage, minMessageSizeInKb, maxMessageSizeInKb, rangeStdDev, configuration.description(), startTestTime);
+                numberOfMessage, minMessageSizeInKb, maxMessageSizeInKb, rangeStdDev, configuration.description(), configuration.includedTopics(), startTestTime);
         log.info(
                 "Create stress test configuration: testId={}, numberOfMessages={}, minSizeKb={}, maxSizeKb={}, rangeStdDev={}, startTime={}, description={}, currentQueueDepth={}",
                 testId, numberOfMessage, minMessageSizeInKb, maxMessageSizeInKb, rangeStdDev, startTestTime, configuration.description(),
                 stressTestQueue.size());
-        stressTestRepo.createStressTestConfiguration(pendingConfiguration);
+        PendingStressTestConfigurationMdl mdl = new PendingStressTestConfigurationMdl(pendingConfiguration.testId(), pendingConfiguration.numOfMessage(), pendingConfiguration.minMessageSizeInKb(), pendingConfiguration.maxMessageSizeInKb(), pendingConfiguration.rangeStdDev(), pendingConfiguration.description(), pendingConfiguration.includedTopics() == null ? "" : String.join(",", pendingConfiguration.includedTopics()), pendingConfiguration.startTime());
+        stressTestRepo.createStressTestConfiguration(mdl);
         stressTestQueue.add(pendingConfiguration);
         log.info("Stress test queued successfully: testId={}, newQueueDepth={}", testId, stressTestQueue.size());
         return Uni.createFrom().item(testId);

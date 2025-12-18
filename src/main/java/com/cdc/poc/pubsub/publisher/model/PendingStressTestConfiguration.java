@@ -2,6 +2,7 @@ package com.cdc.poc.pubsub.publisher.model;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record PendingStressTestConfiguration(
@@ -11,6 +12,7 @@ public record PendingStressTestConfiguration(
         BigDecimal maxMessageSizeInKb,
         BigDecimal rangeStdDev,
         String description,
+        List<String> includedTopics,
         Instant startTime
 ) {
 }

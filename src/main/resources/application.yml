@@ -26,7 +26,10 @@ quarkus:
       includes:
         - db/migration/**
 pubsub:
-  topic: ${PUBSUB_TOPIC:poc-pubsub-performance}
+  topics:
+    - poc-pubsub-performance-push
+    - poc-pubsub-performance-pull-async
+    - poc-pubsub-performance-pull-sync
 workers:
   topic-result:
     size: 10

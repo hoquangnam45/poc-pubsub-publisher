@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS test_configuration (
     min_message_size_in_kb DECIMAL,
     max_message_size_in_kb DECIMAL,
     range_std_dev DECIMAL,
+    included_topics TEXT,
     description VARCHAR(255),
     start_time TIMESTAMP
 );
@@ -25,6 +26,7 @@ CREATE TABLE IF NOT EXISTS test_publish_result (
 CREATE TABLE IF NOT EXISTS test_topic_result (
     test_id UUID,
     message_id UUID,
+    topic_id VARCHAR(255),
     topic_publish_time TIMESTAMP,
     topic_arrival_time TIMESTAMP,
     PRIMARY KEY (test_id, message_id),
