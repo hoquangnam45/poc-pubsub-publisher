@@ -71,7 +71,6 @@ public class PublisherResource {
                         configuration.testId(), configuration.numOfMessage(), configuration.minMessageSizeInKb(),
                         configuration.maxMessageSizeInKb(), configuration.rangeStdDev(), configuration.description(), stressTestQueue.size());
                 Instant testStartTime = Instant.now();
-                AtomicInteger completedCount = new AtomicInteger(0);
                 int totalMessages = configuration.numOfMessage();
                 for (int i = 0; i < configuration.numOfMessage(); i++) {
                     Instant messageGenStartTime = Instant.now();
@@ -106,9 +105,9 @@ public class PublisherResource {
                                         BigDecimal.valueOf(1024));
                                 if (messageIndex % 100 == 0) {
                                     log.info(
-                                            "Published message {}/{}[description={}]: testId={}, messageId={}, payloadSizeKb={}, serializedSizeKb={}, publishLatencyMs={}",
+                                            "Published message {}/{}[description={}]: testId={}, messageId={}, topicId={}, payloadSizeKb={}, serializedSizeKb={}, publishLatencyMs={}",
                                             messageIndex + 1, configuration.numOfMessage(), configuration.description(), message.testId(),
-                                            message.messageId(), message.payloadSizeInKb(), serializedSizeKb,
+                                            message.messageId(), topicName, message.payloadSizeInKb(), serializedSizeKb,
                                             publishDurationMs);
                                 }
                                 PUBLISH_RESULT_QUEUE.add(new PublishResult(message.testId(), message.messageId(),
@@ -116,8 +115,8 @@ public class PublisherResource {
                             } catch (Exception e) {
                                 long publishDurationMs = Duration.between(publishStartTime, Instant.now()).toMillis();
                                 log.error(
-                                        "Failed to publish message: testId={}, messageId={}, payloadSizeInKb={}, serializedSizeKb={}, publishLatencyMs={}, description={}, creationTimestamp={}, error={}",
-                                        message.testId(), message.messageId(), message.payloadSizeInKb(),
+                                        "Failed to publish message: testId={}, messageId={}, topicId={}, payloadSizeInKb={}, serializedSizeKb={}, publishLatencyMs={}, description={}, creationTimestamp={}, error={}",
+                                        message.testId(), message.messageId(), topicName, message.payloadSizeInKb(),
                                         divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
                                                 BigDecimal.valueOf(1024)),
                                         publishDurationMs, configuration.description(), message.creationTimeStamp(), e.getMessage(), e);
@@ -126,15 +125,6 @@ public class PublisherResource {
                                         divide(BigDecimal.valueOf(pubsubMessage.getSerializedSize()),
                                                 BigDecimal.valueOf(1024)),
                                         topicName, message.creationTimeStamp(), publishStartTime));
-                            } finally {
-                                int completed = completedCount.incrementAndGet();
-                                if (completed == totalMessages) {
-                                    long totalPublishTimeMs = Duration.between(testStartTime, Instant.now()).toMillis();
-                                    log.info(
-                                            "All messages published for testId={}, totalMessages={}, totalPublishTimeMs={}, avgPublishTimePerMessageMs={}, description={}",
-                                            configuration.testId(), totalMessages, totalPublishTimeMs,
-                                            totalPublishTimeMs / totalMessages, configuration.description());
-                                }
                             }
                             return true;
                         });
@@ -148,7 +138,7 @@ public class PublisherResource {
                 try {
                     stressTestRepo.createPublishResult(result);
                 } catch (Exception e) {
-                    log.error("Failed to persist topic result message: testId={}, messageId={}, payloadSizeInKb={}, serializedSizeKb={}, creationTimestamp={}, error={}", result.testId(), result.messageId(), result.messageSizeInKb(), result.serializedSizeInKb(), result.createdAt(), e.getMessage(), e);
+                    log.error("Failed to persist topic result message: testId={}, messageId={}, topicId={}, payloadSizeInKb={}, serializedSizeKb={}, creationTimestamp={}, error={}", result.testId(), result.messageId(), result.topicId(), result.messageSizeInKb(), result.serializedSizeInKb(), result.createdAt(), e.getMessage(), e);
                 }
             }
         });

@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS test_publish_result (
     topic_id VARCHAR(255),
     publish_at TIMESTAMP,
     created_at TIMESTAMP,
-    PRIMARY KEY (test_id, message_id),
+    PRIMARY KEY (test_id, message_id, topic_id),
     FOREIGN KEY (test_id) REFERENCES test_configuration(test_id)
 );
 
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS test_topic_result (
     topic_id VARCHAR(255),
     topic_publish_time TIMESTAMP,
     topic_arrival_time TIMESTAMP,
-    PRIMARY KEY (test_id, message_id),
+    PRIMARY KEY (test_id, message_id, topic_id),
     FOREIGN KEY (test_id) REFERENCES test_configuration(test_id)
 );
 
@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS test_subscriber_result
 (
     test_id                   UUID,
     message_id                UUID,
+    topic_id                  VARCHAR(255),
     subscription_publish_time TIMESTAMP,
     subscription_arrival_time TIMESTAMP,
     subscriber_arrival_time   TIMESTAMP,
@@ -44,7 +45,7 @@ CREATE TABLE IF NOT EXISTS test_subscriber_result
     subscription_id VARCHAR(255),
     pull_options VARCHAR(255),
     created_at                TIMESTAMP,
-    PRIMARY KEY (test_id, message_id, subscription_id, pull_options)
+    PRIMARY KEY (test_id, message_id, subscription_id, topic_id)
 --     FOREIGN KEY (test_id, message_id) REFERENCES test_topic_result (test_id, message_id)
 );
 
