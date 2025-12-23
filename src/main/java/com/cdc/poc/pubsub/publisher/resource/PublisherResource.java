@@ -14,6 +14,7 @@ import io.quarkus.arc.ManagedContext;
 import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
+import jakarta.transaction.UserTransaction;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +55,9 @@ public class PublisherResource {
 
     @ConfigProperty(name = "workers.topic-result.size", defaultValue = "10")
     Integer workersTopicResultSize;
+
+    @Inject
+    UserTransaction userTransaction;
 
     @Startup
     public void initSendMessage() throws IOException {
@@ -140,10 +144,12 @@ public class PublisherResource {
                 ManagedContext requestContext = Arc.container().requestContext();
                 requestContext.activate();
                 try {
-
+                    userTransaction.begin();
                     stressTestRepo.createPublishResult(result);
+                    userTransaction.commit();
                 } catch (Exception e) {
                     log.error("Failed to persist topic result message: testId={}, messageId={}, topicId={}, payloadSizeInKb={}, serializedSizeKb={}, creationTimestamp={}, error={}", result.testId(), result.messageId(), result.topicId(), result.messageSizeInKb(), result.serializedSizeInKb(), result.createdAt(), e.getMessage(), e);
+                    userTransaction.rollback();
                 } finally {
                     requestContext.terminate();
                 }
