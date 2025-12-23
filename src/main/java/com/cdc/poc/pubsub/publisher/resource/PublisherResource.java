@@ -9,6 +9,8 @@ import com.cdc.poc.pubsub.publisher.repo.StressTestRepo;
 import com.google.cloud.pubsub.v1.Publisher;
 import com.google.pubsub.v1.PubsubMessage;
 import io.quarkiverse.googlecloudservices.pubsub.QuarkusPubSub;
+import io.quarkus.arc.Arc;
+import io.quarkus.arc.ManagedContext;
 import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.Uni;
 import jakarta.inject.Inject;
@@ -135,10 +137,15 @@ public class PublisherResource {
         topicResultExecutor.submit(() -> {
             while (true) {
                 PublishResult result = PUBLISH_RESULT_QUEUE.take();
+                ManagedContext requestContext = Arc.container().requestContext();
+                requestContext.activate();
                 try {
+
                     stressTestRepo.createPublishResult(result);
                 } catch (Exception e) {
                     log.error("Failed to persist topic result message: testId={}, messageId={}, topicId={}, payloadSizeInKb={}, serializedSizeKb={}, creationTimestamp={}, error={}", result.testId(), result.messageId(), result.topicId(), result.messageSizeInKb(), result.serializedSizeInKb(), result.createdAt(), e.getMessage(), e);
+                } finally {
+                    requestContext.terminate();
                 }
             }
         });
