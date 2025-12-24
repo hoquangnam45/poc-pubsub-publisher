@@ -19,8 +19,7 @@ CREATE TABLE IF NOT EXISTS test_publish_result (
     topic_id VARCHAR(255),
     publish_at TIMESTAMP,
     created_at TIMESTAMP,
-    PRIMARY KEY (test_id, message_id, topic_id),
-    FOREIGN KEY (test_id) REFERENCES test_configuration(test_id)
+    PRIMARY KEY (test_id, message_id, topic_id)
 );
 
 CREATE TABLE IF NOT EXISTS test_topic_result (
@@ -29,8 +28,7 @@ CREATE TABLE IF NOT EXISTS test_topic_result (
     topic_id VARCHAR(255),
     topic_publish_time TIMESTAMP,
     topic_arrival_time TIMESTAMP,
-    PRIMARY KEY (test_id, message_id, topic_id),
-    FOREIGN KEY (test_id) REFERENCES test_configuration(test_id)
+    PRIMARY KEY (test_id, message_id, topic_id)
 );
 
 CREATE TABLE IF NOT EXISTS test_subscriber_result
